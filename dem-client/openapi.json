@@ -1,0 +1,187 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "dem-server",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ],
+  "paths": {
+    "/overlapping_guilds": {
+      "get": {
+        "operationId": "api_get_overlapping_guilds",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse_for_Array_of_PartialGuildWithPermission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OkResponse_for_Array_of_PartialGuildWithPermission": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartialGuildWithPermission"
+            }
+          }
+        }
+      },
+      "PartialGuildWithPermission": {
+        "type": "object",
+        "required": [
+          "emojis",
+          "icon",
+          "id",
+          "name",
+          "permissions",
+          "stickers"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "name": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "emojis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmojiItem"
+            }
+          },
+          "stickers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StickerItem"
+            }
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "permissions": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "EmojiItem": {
+        "type": "object",
+        "required": [
+          "animated",
+          "available",
+          "id",
+          "managed",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "animated": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "StickerItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ErrResponse": {
+        "type": "object",
+        "required": [
+          "err"
+        ],
+        "properties": {
+          "err": {
+            "$ref": "#/components/schemas/UserError"
+          }
+        }
+      },
+      "UserError": {
+        "type": "object",
+        "required": [
+          "code",
+          "description"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/Error"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "Error": {
+        "type": "string",
+        "enum": [
+          "Internal",
+          "DiscordAPI"
+        ]
+      }
+    }
+  }
+}

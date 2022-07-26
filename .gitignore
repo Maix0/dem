@@ -1,0 +1,10 @@
+/target
+Cargo.lock
+flake.lock
+dist
+/.direnv
+Rocket.toml
+node_modules
+.direnv
+*.lock
+dem-http
