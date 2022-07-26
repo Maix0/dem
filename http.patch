@@ -1,0 +1,26 @@
+From b95d82f0678fc02f71a2c8ca0d62b2bd2e7995e6 Mon Sep 17 00:00:00 2001
+From: Maix0 <maix522@gmail.com>
+Date: Tue, 26 Jul 2022 23:26:07 +0200
+Subject: [PATCH 1/1] diff
+
+Signed-off-by: Maix0 <maix522@gmail.com>
+---
+ dem-http/Cargo.toml | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/dem-http/Cargo.toml b/dem-http/Cargo.toml
+index c462ad7..ba4cdae 100644
+--- a/dem-http/Cargo.toml
++++ b/dem-http/Cargo.toml
+@@ -11,6 +11,7 @@ serde_json = "^1.0"
+ url = "^2.2"
+ [dependencies.reqwest]
+ version = "^0.11"
+-features = ["json", "multipart"]
++features = ["json", "multipart", "rustls-tls-webpki-roots"]
++default-features = false
+ 
+ [dev-dependencies]
+-- 
+2.37.0
+
