@@ -31,7 +31,8 @@
           ];
           shellHook = ''
 			PATH=$PATH_ADD:$PATH
-          '';
+          		alias "gen-dem-http"="nix shell nixpkgs#openjdk -c ./generate_dem_http.sh"
+		  '';
         };
     });
 }
