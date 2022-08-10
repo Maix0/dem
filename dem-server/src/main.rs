@@ -14,6 +14,7 @@ extern crate tokio;
 mod api;
 mod auth;
 mod discord;
+mod retry_middleware;
 
 pub use dem_types::error::{Error, Rsp};
 use rocket_db_pools::{deadpool_redis::Pool, Connection, Database};

@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    time::SystemTime,
-};
+use std::{collections::HashMap, time::SystemTime};
 
 use dem_types::discord as types;
 use rocket::figment::Figment;
@@ -23,7 +20,7 @@ pub struct Logic {
     pub guilds: &'static dashmap::DashMap<u64, types::PartialGuild>,
     pub user_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<String, LoggedUser>>>,
     pub user_id_to_token: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String>>>,
-    client: reqwest::Client,
+    client: reqwest_middleware::ClientWithMiddleware,
 }
 
 impl Logic {
@@ -318,7 +315,12 @@ impl Logic {
             user_id_to_token,
             guilds,
             discord_token: config.discord_token,
-            client: reqwest::Client::new(),
+            client: {
+                let client = reqwest::Client::new();
+                reqwest_middleware::ClientBuilder::new(client)
+                    .with(crate::retry_middleware::DiscordRateLimitMiddleware)
+                    .build()
+            },
         })
     }
 
