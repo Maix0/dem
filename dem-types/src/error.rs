@@ -111,6 +111,10 @@ define_error! {
         DiscordAPI = {
             description: "discord api errror",
             code: 1,
+        },
+        Unauthorized = {
+            description: "not authorized",
+            code: 2,
         }
     }
 }

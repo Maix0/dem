@@ -23,3 +23,4 @@ tokio-tungstenite = { version = "0.17.2", features = ["rustls", "rustls-tls-nati
 schemars = "0.8.10"
 okapi = { version = "0.7.0-rc.1" }
 rocket_okapi = { version = "0.8.0-rc.2", features = ["swagger"] }
+rocket_db_pools = { version = "0.1.0-rc.2", features = ["deadpool_redis"] }

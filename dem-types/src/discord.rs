@@ -27,6 +27,21 @@ pub struct PartialGuild {
     pub emojis: Vec<EmojiItem>,
     pub stickers: Vec<StickerItem>,
     pub description: Option<String>,
+    pub members: Vec<GuildMember>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize, JsonSchema)]
+pub struct GuildMember {
+    pub user: User,
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_str")]
+    pub permissions: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize, JsonSchema)]
+pub struct User {
+    #[serde(deserialize_with = "deserialize_str")]
+    pub id: u64, 
 }
 
 

@@ -1,8 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
-    <head> 
+<html lang="en" data-theme="dark">
+    <head>
 		<title> Discord Emoji Manager </title>
-		<link data-trunk rel="icon" href="./favicon.ico" type="image/x-icon"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500" rel="stylesheet">
+		<link href="https://fonts.googleapis.com/css?family=Material+Icons&display=block" rel="stylesheet">
+		<link data-trunk rel="icon" href="./favicon.ico" type="image/x-icon">
+		<style>
+			html, body {
+				padding: 0px;
+				margin: 0px;
+			}
+			* {
+				font-family: 'Roboto', sans-serif; 
+			}
+			a {
+				text-decoration: none;
+			}
+			.guild-list-item img {
+				width: 3em;
+				height: 3em;
+				border-radius: 50%;
+				padding-right: 1em;
+			}
+			
+			.guild-list-item span {
+				text-decoration: none;
+				color: var(--mdc-theme-on-surface);
+			}
+
+
+			.guild-list-item {
+				padding-top: 0px;
+				margin-top: 0px;
+				display: flex;
+				flex-direction: row;
+				flex-wrap: nowrap;
+				justify-content: flex-start;
+				align-items: center;
+				height: 4em;
+			}
+		</style>
 	</head>
     <body> </body>
 </html>

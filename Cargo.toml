@@ -1,2 +1,3 @@
 [workspace]
 members = ["dem-client", "dem-server", "dem-types", "dem-http"]
+resolver = "2"

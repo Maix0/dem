@@ -7,6 +7,7 @@ extern crate rocket;
 extern crate dem_types;
 extern crate okapi;
 extern crate reqwest;
+extern crate rocket_db_pools;
 extern crate schemars;
 extern crate tokio;
 
@@ -14,12 +15,17 @@ mod api;
 mod auth;
 mod discord;
 
-pub use dem_types::error::{Error, OkResponse, Rsp};
+pub use dem_types::error::{Error, Rsp};
+use rocket_db_pools::{deadpool_redis::Pool, Connection, Database};
+
+#[derive(Database)]
+#[database("dem_db")]
+pub struct DemDb(Pool);
 
 #[rocket::launch]
 async fn launch() -> _ {
     rocket::build()
-        .mount("/dev", routes![get_emojis, get_stickers])
+        .mount("/dev", routes![get_emojis, get_stickers, get_user])
         .mount(
             "/swagger-ui",
             rocket_okapi::swagger_ui::make_swagger_ui(&rocket_okapi::swagger_ui::SwaggerUIConfig {
@@ -27,8 +33,14 @@ async fn launch() -> _ {
                 ..Default::default()
             }),
         )
-        .mount("/api", openapi_get_routes![api::get_overlapping_guilds])
-        .mount("/api/auth", routes![auth::login, auth::callback])
+        .mount(
+            "/api",
+            openapi_get_routes![api::get_overlapping_guilds, api::get_current_user, api::get_guild_emojis, api::get_guild_stickers],
+        )
+        .mount(
+            "/api/auth",
+            routes![auth::login, auth::callback, auth::logout],
+        )
         .mount(
             "/",
             rocket::fs::FileServer::from({
@@ -50,6 +62,7 @@ async fn launch() -> _ {
                 .unwrap(),
         )
         .attach(rocket_oauth2::OAuth2::<auth::Discord>::fairing("discord"))
+        .attach(DemDb::init())
 }
 
 #[get("/get_emojis?<guildid>")]
@@ -63,6 +76,11 @@ async fn get_emojis(
             .map(|kv| (*kv).emojis.clone())
             .unwrap_or_else(Vec::new),
     )
+}
+
+#[get("/user")]
+async fn get_user(user: auth::User) -> String {
+    user.token
 }
 
 #[get("/get_stickers?<guildid>")]

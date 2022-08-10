@@ -1,5 +1,11 @@
+use std::{
+    collections::{HashMap, HashSet},
+    time::SystemTime,
+};
+
 use dem_types::discord as types;
 use rocket::figment::Figment;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const DISCORD_API: &str = "https://discord.com/api/v10";
@@ -12,11 +18,11 @@ pub fn get_token() -> &'static str {
     unsafe { BOT_AUTH_HEADER }
 }
 
-#[derive(Debug)]
 pub struct Logic {
     discord_token: String,
     pub guilds: &'static dashmap::DashMap<u64, types::PartialGuild>,
-    //user_cache: lru::LruCache<String, LoggedUser>,
+    pub user_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<String, LoggedUser>>>,
+    pub user_id_to_token: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String>>>,
     client: reqwest::Client,
 }
 
@@ -24,11 +30,13 @@ impl Logic {
     async fn handle_gateway(
         token: String,
         guilds: &'static dashmap::DashMap<u64, types::PartialGuild>,
+        user_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<String, LoggedUser>>>,
+        user_id_to_token: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String>>>,
     ) {
         use futures_util::{sink::SinkExt, stream::StreamExt};
         use rand::{Rng, SeedableRng};
 
-        let (mut client_writer, mut client_reader) =
+        let (client_writer, mut client_reader) =
             match tokio_tungstenite::connect_async(DISCORD_WS).await {
                 Err(e) => {
                     error!("Error when connecting to discord gateway: {e}");
@@ -114,7 +122,21 @@ impl Logic {
                                         Ok(g) => g,
                                     };
 
-                                    guilds.insert(guild.id, guild);
+                                    guilds.insert(guild.id, guild.clone());
+                                    tokio::spawn({
+                                        let user_id_to_token = user_id_to_token.clone();
+                                        let user_cache = user_cache.clone();
+                                        async move {
+                                            let mut lock = user_id_to_token.write().await;
+                                            let mut lock_cache = user_cache.write().await;
+                                            for member in guild.members {
+                                                if let Some(token) = lock.get(&member.user.id) {
+                                                    let v = lock_cache.get_mut(token).unwrap();
+                                                    v.guilds.insert(guild.id, member.permissions);
+                                                }
+                                            }
+                                        }
+                                    });
                                 }
                                 "GUILD_DELETE" => {
                                     debug!("Got GUILD_DELETE");
@@ -122,7 +144,7 @@ impl Logic {
                                     struct GuildUnavailable {
                                         #[serde(deserialize_with = "deserialize_str")]
                                         id: u64,
-                                        unavailable: Option<bool>,
+                                        // unavailable: Option<bool>,
                                     }
                                     let guild = match serde_json::from_value::<GuildUnavailable>(
                                         m["d"].clone(),
@@ -240,21 +262,60 @@ impl Logic {
         }
     }
 
+    pub async fn clear_logged_user_bg_task(
+        timeout_ms: u64,
+        cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<String, LoggedUser>>>,
+        cache_id: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String>>>,
+    ) {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(timeout_ms));
+        loop {
+            interval.tick().await;
+            let mut cache_lock = cache.write().await;
+            let mut cache_id_lock = cache_id.write().await;
+            let to_prune = cache_lock
+                .iter()
+                .filter_map(|(k, v)| v.expires_at.elapsed().ok().map(|_| (k.clone(), v.user_id)))
+                .collect::<Vec<_>>();
+            for (token, user_id) in to_prune {
+                cache_lock.pop(&token);
+                cache_id_lock.pop(&user_id);
+            }
+        }
+    }
+
     pub async fn from_figment(figment: &Figment) -> Result<Self, rocket::figment::Error> {
         #[derive(serde::Deserialize)]
         struct Config {
             discord_token: String,
             logged_user_cache: usize,
+            logged_user_purge_time: u64,
         }
         let config = figment.extract_inner::<Config>("dem")?;
         unsafe {
             BOT_AUTH_HEADER = Box::leak(format!("BOT {}", config.discord_token).into_boxed_str());
         }
         let guilds = Box::leak(Box::new(dashmap::DashMap::with_capacity(1024)));
+        let user_cache = std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+            config.logged_user_cache,
+        )));
+        let user_id_to_token = std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+            config.logged_user_cache,
+        )));
 
-        tokio::spawn(Self::handle_gateway(config.discord_token.clone(), guilds));
+        tokio::spawn(Self::handle_gateway(
+            config.discord_token.clone(),
+            guilds,
+            user_cache.clone(),
+            user_id_to_token.clone(),
+        ));
+        tokio::spawn(Self::clear_logged_user_bg_task(
+            config.logged_user_purge_time,
+            user_cache.clone(),
+            user_id_to_token.clone(),
+        ));
         Ok(Self {
-            //user_cache: lru::LruCache::new(config.logged_user_cache),
+            user_cache,
+            user_id_to_token,
             guilds,
             discord_token: config.discord_token,
             client: reqwest::Client::new(),
@@ -283,7 +344,7 @@ impl Logic {
         let response: Vec<PartialGuildFromUser> = self
             .client
             .get(format!("{DISCORD_API}/users/@me/guilds"))
-            .header("Authorization", format!("Bearer {user_token}"))
+            .bearer_auth(user_token)
             .send()
             .await?
             .json()
@@ -296,13 +357,45 @@ impl Logic {
         );
         Ok(out)
     }
+
+    pub async fn get_user(
+        &self,
+        token: &str,
+    ) -> Result<DiscordUser, Box<dyn std::error::Error + Send + Sync>> {
+        self.client
+            .get(format!("{DISCORD_API}/users/@me"))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(Into::into)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DiscordUser {
+    #[serde(deserialize_with = "deserialize_str")]
+    pub id: u64,
+    pub username: String,
+    pub discriminator: String,
+    pub avatar: Option<String>,
 }
 
 fn deserialize_str<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    use serde::Deserialize;
     let s = <String>::deserialize(deserializer)?;
     s.parse().map_err(serde::de::Error::custom)
+}
+
+#[derive(Debug, Clone)]
+pub struct LoggedUser {
+    pub expires_at: SystemTime,
+    pub user_id: u64,
+    pub user_icon: Option<String>,
+    pub username: String,
+    pub discriminator: String,
+    pub guilds: HashMap<u64, u64>,
 }

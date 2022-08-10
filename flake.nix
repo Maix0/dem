@@ -28,6 +28,7 @@
 
             trunk
             wasm-bindgen-cli
+            fastmod
           ];
           shellHook = ''
 			PATH=$PATH_ADD:$PATH
