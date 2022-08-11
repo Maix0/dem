@@ -1,22 +1,102 @@
 #[macro_use]
 extern crate weblog;
+extern crate dem_http;
 extern crate gloo_utils;
 extern crate material_yew;
 extern crate yew;
+extern crate yew_hooks;
 
 use std::ops::Deref;
 
 use material_yew::{top_app_bar_fixed::*, *};
 use yew::prelude::*;
+use yew_hooks::prelude::*;
 use yew_router::prelude::*;
+
 mod logged;
 mod theme;
 
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct UserLogin(dem_http::models::OkResponseForNullableUserLogin);
+#[derive(Clone, Debug)]
+enum CloneError<T> {
+    ResponseError(dem_http::apis::ResponseContent<T>),
+    Io(String),
+    Reqwest(String),
+    Serde(String),
+}
 
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct OverlappingGuilds(dem_http::models::OkResponseForArrayOfPartialGuildWithPermission);
+impl<T: Clone> std::convert::From<dem_http::apis::Error<T>> for CloneError<T> {
+    fn from(c: dem_http::apis::Error<T>) -> Self {
+        match c {
+            dem_http::apis::Error::Io(e) => Self::Io(e.to_string()),
+            dem_http::apis::Error::Serde(e) => Self::Serde(e.to_string()),
+            dem_http::apis::Error::Reqwest(e) => Self::Reqwest(e.to_string()),
+            dem_http::apis::Error::ResponseError(r) => Self::ResponseError(r),
+        }
+    }
+}
+impl<T: Clone> CloneError<T> {
+    fn from_error(err: dem_http::apis::Error<T>) -> Self {
+        err.into()
+    }
+}
+
+impl<T> CloneError<T> {}
+
+macro_rules! gen_error_name {
+    ($($err:tt),*) => {
+        $(
+        #[allow(dead_code)]
+        impl CloneError<$err> {
+            fn catergory(&self) -> &'static str {
+                match self {
+                    CloneError::Io(_) => "Io",
+                    CloneError::Serde(_) => "Api Deserialization",
+                    CloneError::Reqwest(_) => "Http",
+                    CloneError::ResponseError(r) => {
+                        if let Some($err::Status400(err_response)) = &r.entity {
+                            match err_response.err.code {
+                                dem_http::models::error::Error::Internal => {
+                                    "Internal"
+                                }
+                                dem_http::models::error::Error::DiscordAPI => {
+                                    "Discord API"
+                                }
+                                dem_http::models::error::Error::Unauthorized => {
+                                    "Unauthorize"
+                                }
+                            }
+                        } else {
+                            "Unknown"
+                        }
+                    }
+                }
+            }
+            fn detail(&self) -> String {
+                match self {
+                    CloneError::Io(e) => e.to_string(),
+                    CloneError::Serde(e) => e.to_string(),
+                    CloneError::Reqwest(e) => e.to_string(),
+                    CloneError::ResponseError(ref r) => {
+                        if let Some($err::Status400(err_response)) = &r.entity {
+                            err_response.err.description.clone()
+                        } else {
+                            "No description".to_string()
+                        }
+
+                    }
+                }
+            }
+        }
+        )*
+    };
+}
+use dem_http::apis::default_api::*;
+gen_error_name!(
+    ApiGetCurrentUserError,
+    ApiGetGuildEmojisError,
+    ApiGetGuildStickersError,
+    ApiGetOverlappingGuildsError
+);
 
 #[derive(Debug, Clone, Default)]
 pub struct APIConfig(dem_http::apis::configuration::Configuration);
@@ -36,40 +116,36 @@ impl Deref for APIConfig {
 
 type AppLink = Link<Routes>;
 
+fn enable_auto() -> UseAsyncOptions {
+    UseAsyncOptions::enable_auto()
+}
+
 #[function_component(App)]
 fn app() -> Html {
-    let user_login = use_state(UserLogin::default);
     let config = use_state(APIConfig::default);
-    let guilds = use_state(OverlappingGuilds::default);
     let drawer = use_state(|| false);
-    {
-        use_effect_with_deps(
-            {
-                let user_login = user_login.clone();
-                let config = config.clone();
-                let guilds = guilds.clone();
-                move |()| {
-                    wasm_bindgen_futures::spawn_local(async move {
-                        match dem_http::apis::default_api::api_get_current_user(&config).await {
-                            Ok(u) => {
-                                user_login.set(UserLogin(u));
-                            }
-                            Err(e) => console_error!(format!("{:?}", e)),
-                        };
-                        match dem_http::apis::default_api::api_get_overlapping_guilds(&config).await
-                        {
-                            Ok(g) => {
-                                guilds.set(OverlappingGuilds(g));
-                            }
-                            Err(e) => console_error!(format!("{:?}", e)),
-                        }
-                    });
-                    || ()
-                }
-            },
-            (),
-        )
-    }
+    let user_login = use_async_with_options(
+        {
+            let config = config.clone();
+            async move {
+                dem_http::apis::default_api::api_get_current_user(&config)
+                    .await
+                    .map_err(CloneError::from_error)
+            }
+        },
+        enable_auto(),
+    );
+    let guilds = use_async_with_options(
+        {
+            let config = config.clone();
+            async move {
+                dem_http::apis::default_api::api_get_overlapping_guilds(&config)
+                    .await
+                    .map_err(CloneError::from_error)
+            }
+        },
+        enable_auto(),
+    );
 
     let toggle_drawer = {
         let drawer = drawer.clone();
@@ -89,17 +165,22 @@ fn app() -> Html {
         <>
         <theme::MatThemeSetter ..theme::MatThemeSetterProps::DARK_THEME/>
         <ContextProvider<APIConfig> context={(*config).clone()}>
-        <ContextProvider<UserLogin> context={(*user_login).clone()}>
-        <ContextProvider<OverlappingGuilds> context={(*guilds).clone()}>
             <HashRouter>
                 <MatDrawer open={*drawer} drawer_type="dismissible">
                     <div onclick={onclick.clone().reform(|_| ())}>
                         <MatIconButton icon="close" label="Close" />
                     </div>
+
                     {
-                        guilds.0.ok.iter().map(|g|
-                            html!{<GuildListItem guild={g.clone()} onclick={onclick.clone()}/>}
-                        ).collect::<Html>()
+                        if let Some(guilds) = &guilds.data {
+                            guilds.ok.iter().map(|g|
+                                html!{<GuildListItem guild={g.clone()} onclick={onclick.clone()}/>}
+                            ).collect::<Html>()
+                        } else if let Some(error) = &guilds.error {
+                            html!{<ErrorComponent name={error.catergory()} description={error.detail()} />}
+                        } else {
+                            html!{}
+                        }
                     }
                 </MatDrawer>
                 <MatTopAppBarFixed onnavigationiconclick={toggle_drawer}>
@@ -111,32 +192,55 @@ fn app() -> Html {
                         {"Discord Emojis Manager"}
                     </MatTopAppBarTitle>
                     <MatTopAppBarActionItems>
-                        <Login />
+                        {
+                            if let Some(dem_http::models::OkResponseForNullableUserLogin {ok: Some(user)}) = &user_login.data {
+                                html! {
+                                    <div> {format!("Logged in as {}", user.username)} </div>
+                                }
+                            } else if let Some(error) = &user_login.error {
+                                html!{<ErrorComponent name={error.catergory()} description={error.detail()} />}
+                            } else {
+                                html! {
+                                    <a href="/api/auth">
+                                        <MatButton label="Login" icon={yew::virtual_dom::AttrValue::from("login")} unelevated=true trailing_icon=true/>
+                                    </a>
+                                }
+                            }
+                        }
                     </MatTopAppBarActionItems>
 
                 </MatTopAppBarFixed>
-                <Switch<Routes> render={Callback::<Routes, Html>::from(move |r| switch(&*guilds, r))} />
+                {
+                    if let Some(guilds) = guilds.data.clone() {
+                        html! {<Switch<Routes> render={Callback::<Routes, Html>::from(move |r| switch(&guilds, r))} />}
+                    } else {
+                        html!{"Loading..."}
+                    }
+                }
             </HashRouter>
-        </ContextProvider<OverlappingGuilds>>
-        </ContextProvider<UserLogin>>
         </ContextProvider<APIConfig>>
     </>
     }
 }
 
-#[function_component(Login)]
-fn login() -> Html {
-    let logged_in = use_context::<UserLogin>().unwrap();
-    if let Some(user) = logged_in.0.ok {
-        html! {
-            <div> {format!("Logged in as {}", user.username)} </div>
-        }
-    } else {
-        html! {
-            <a href="/api/auth">
-                <MatButton label="Login" icon={yew::virtual_dom::AttrValue::from("login")} unelevated=true trailing_icon=true/>
-            </a>
-        }
+#[derive(Debug, Clone, PartialEq, Properties)]
+struct ErrorComponentProps {
+    name: String,
+    description: String,
+}
+
+#[function_component(ErrorComponent)]
+fn error_component(ErrorComponentProps { name, description }: &ErrorComponentProps) -> Html {
+    html! {
+        <MatSnackbar label_text={format!("{} Error: {}", name, description)}>
+            <span slot="action">
+                <MatButton label="RETRY" />
+            </span>
+
+            <span class="snackbar-dismiss-slot" slot="dismiss">
+                <MatIconButton icon="close" />
+            </span>
+        </MatSnackbar>
     }
 }
 
@@ -171,23 +275,26 @@ enum Routes {
     Guild { id: u64 },
 }
 
-fn switch(guilds: &OverlappingGuilds, r: Routes) -> Html {
+fn switch(
+    guilds: &dem_http::models::OkResponseForArrayOfPartialGuildWithPermission,
+    r: Routes,
+) -> Html {
     match r {
         Routes::Main => html! {
-            <div class="main-app">
+            <div class="main_app">
                 {"Main App"}
             </div>
         },
         Routes::Guild { id } => {
-            if guilds.0.ok.iter().any(|g| g.id == id) {
+            if guilds.ok.iter().any(|g| g.id == id) {
                 html! {
-                    <div class="main-app">
+                    <div class="main_app">
                         <GuildEmojiList {id} />
                     </div>
                 }
             } else {
                 html! {
-                    <div class="main-app">
+                    <div class="main_app">
                         {"No guild found"}
                     </div>
                 }
@@ -204,30 +311,32 @@ pub struct EmojiListProps {
 #[function_component(GuildEmojiList)]
 fn emoji_list(props: &EmojiListProps) -> Html {
     let api_config = use_context::<APIConfig>().unwrap();
-    let emojis = use_state(Vec::<dem_http::models::EmojiItem>::new);
-
-    use_effect_with_deps(
+    let emojis = use_async_with_options(
         {
             let id = props.id;
-            let emojis = emojis.clone();
-            move |_| {
-                wasm_bindgen_futures::spawn_local(async move {
-                    match dem_http::apis::default_api::api_get_guild_emojis(&api_config, id).await {
-                        Ok(o) => emojis.set(o.ok),
-                        Err(e) => console_error!("Error with DEM API", e.to_string()),
-                    };
-                });
-                || ()
+            async move {
+                dem_http::apis::default_api::api_get_guild_emojis(&api_config, id)
+                    .await
+                    .map_err(CloneError::from_error)
             }
         },
-        (),
+        enable_auto(),
     );
     html! {
         {
-            emojis.iter().map(|e| html! {
-                <EmojiListItem inner={e.clone()}/>
+            if emojis.loading {
+                html!{"Loading"}
             }
-            ).collect::<Html>()
+            else if let Some(emojis) = &emojis.data {
+                emojis.ok.iter().map(|e| html! {
+                    <EmojiListItem inner={e.clone()}/>
+                }
+                ).collect::<Html>()
+            } else if let Some(error) = &emojis.error {
+                html!{<ErrorComponent name={error.catergory()} description={error.detail()} />}
+            } else {
+                html! {<ErrorComponent name={"DEV"} description={"Maix fucked up"}/> }
+            }
         }
     }
 }
@@ -241,8 +350,8 @@ struct EmojiListItemProps {
 fn emoji_list_item(props: &EmojiListItemProps) -> Html {
     html! {
         <div class={classes!["emoji_item"]}>
-            <img src={format!("https://cdn.discordapp.com/emojis/{}.{}",props.inner.id, if props.inner.animated {"gif"} else {"png"})} />
             <span> {&props.inner.name} </span>
+            <img src={format!("https://cdn.discordapp.com/emojis/{}.{}",props.inner.id, if props.inner.animated {"gif"} else {"png"})} />
         </div>
     }
 }
