@@ -117,9 +117,7 @@ pub fn theme(
         background: su_bg,
         forground: su_fg,
     } = surface;
-    let style = html! {
-        <style>
-            {format!(r"
+    let style = format!(r"
                 html {{
                     --mdc-theme-primary: #{p_bg:08X};
                     --mdc-theme-on-primary: #{p_fg:08X};
@@ -135,8 +133,8 @@ pub fn theme(
                     background-color: #{background:08X};
                     color: #{su_fg:08X};
                 }}
-            ")}
-        </style>
-    };
-    yew::create_portal(style, gloo_utils::document().head().unwrap().into())
+            ");
+    html! {
+        <stylist::yew::Global css={style} />
+    }
 }

@@ -15,3 +15,4 @@ gloo-utils = "0.1.4"
 yew-router = { git = "https://github.com/yewstack/yew" }
 yew = { git = "https://github.com/yewstack/yew", features= [ "csr" ]  }
 yew-hooks = { git = "https://github.com/jetli/yew-hooks/", version = "0.1.56" }
+stylist = { version = "0.11.0", features = ["yew_integration"], git = "https://github.com/maix0/stylist-rs" }

@@ -3,6 +3,7 @@ extern crate weblog;
 extern crate dem_http;
 extern crate gloo_utils;
 extern crate material_yew;
+extern crate stylist;
 extern crate yew;
 extern crate yew_hooks;
 
@@ -14,6 +15,7 @@ use yew_hooks::prelude::*;
 use yew_router::prelude::*;
 
 mod logged;
+mod style;
 mod theme;
 
 #[derive(Clone, Debug)]
