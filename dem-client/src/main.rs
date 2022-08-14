@@ -10,6 +10,7 @@ extern crate yew_hooks;
 use std::ops::Deref;
 
 use material_yew::{top_app_bar_fixed::*, *};
+use stylist::yew::*;
 use yew::prelude::*;
 use yew_hooks::prelude::*;
 use yew_router::prelude::*;
@@ -165,6 +166,7 @@ fn app() -> Html {
 
     html! {
         <>
+        <style::MainStyle />
         <theme::MatThemeSetter ..theme::MatThemeSetterProps::DARK_THEME/>
         <ContextProvider<APIConfig> context={(*config).clone()}>
             <HashRouter>
@@ -252,7 +254,7 @@ struct Guild {
     onclick: Callback<()>,
 }
 
-#[function_component(GuildListItem)]
+#[styled_component(GuildListItem)]
 fn guild_list_item(
     Guild {
         guild: dem_http::models::PartialGuildWithPermission { id, name, icon, .. },
@@ -261,9 +263,11 @@ fn guild_list_item(
 ) -> Html {
     html! {
         <AppLink to={Routes::Guild {id: *id} }>
-        <div class={classes!["guild-list-item"]} onclick={onclick.reform(|_| ())}>
-            <img src={yew::virtual_dom::AttrValue::from(format!("https://cdn.discordapp.com/icons/{id}/{icon}.png?size=1024"))} />
-            <span>{name}</span>
+        <div class={css!("padding-top: 0px; margin-top: 0px; display: flex; flex-direction: row; flex-wrap: nowrap; justify-content: flex-start; align-items: center; height: 4em;")}
+            onclick={onclick.reform(|_| ())}>
+            <img class={css!("width: 3em; height: 3em; border-radius: 50%; padding-right: 1em;")}
+                src={yew::virtual_dom::AttrValue::from(format!("https://cdn.discordapp.com/icons/{id}/{icon}.png?size=1024"))} />
+            <span class={css!("text-decoration: none; color: var(--mdc-theme-on-surface);")}>{name}</span>
         </div>
         </AppLink>
     }
@@ -283,22 +287,16 @@ fn switch(
 ) -> Html {
     match r {
         Routes::Main => html! {
-            <div class="main_app">
-                {"Main App"}
-            </div>
+            {"Main App"}
         },
         Routes::Guild { id } => {
             if guilds.ok.iter().any(|g| g.id == id) {
                 html! {
-                    <div class="main_app">
-                        <GuildEmojiList {id} />
-                    </div>
+                    <GuildEmojiList {id} />
                 }
             } else {
                 html! {
-                    <div class="main_app">
-                        {"No guild found"}
-                    </div>
+                    {"No guild found"}
                 }
             }
         }
@@ -310,7 +308,7 @@ pub struct EmojiListProps {
     id: u64,
 }
 
-#[function_component(GuildEmojiList)]
+#[styled_component(GuildEmojiList)]
 fn emoji_list(props: &EmojiListProps) -> Html {
     let api_config = use_context::<APIConfig>().unwrap();
     let emojis = use_async_with_options(
@@ -330,10 +328,15 @@ fn emoji_list(props: &EmojiListProps) -> Html {
                 html!{"Loading"}
             }
             else if let Some(emojis) = &emojis.data {
-                emojis.ok.iter().map(|e| html! {
-                    <EmojiListItem inner={e.clone()}/>
+                html! {
+                    <div class={css!("display: flex; flex-direction: row; flex-wrap: wrap; justify-content: space-between;")}>
+                    {
+                        emojis.ok.iter().map(|e| html! {
+                            <EmojiListItem inner={e.clone()}/>
+                        }).collect::<Html>()
+                    }
+                    </div>
                 }
-                ).collect::<Html>()
             } else if let Some(error) = &emojis.error {
                 html!{<ErrorComponent name={error.catergory()} description={error.detail()} />}
             } else {
@@ -348,12 +351,12 @@ struct EmojiListItemProps {
     pub inner: dem_http::models::EmojiItem,
 }
 
-#[function_component(EmojiListItem)]
+#[styled_component(EmojiListItem)]
 fn emoji_list_item(props: &EmojiListItemProps) -> Html {
     html! {
-        <div class={classes!["emoji_item"]}>
-            <span> {&props.inner.name} </span>
-            <img src={format!("https://cdn.discordapp.com/emojis/{}.{}",props.inner.id, if props.inner.animated {"gif"} else {"png"})} />
+        <div class={css!("display: flex; flex-direction: column; height: 12rem; width: 10rem; align-items: center; justify-content: space-evenly; color: var(--mdc-theme-on-surface); background-color: var(--mdc-theme-surface); border-radius: 0.5rem; margin: 0.5rem;")}>
+            <span class={css!("height: 1rem;")}> {&props.inner.name} </span>
+            <img class={css!("width: 9rem; max-height: 9rem;")} src={format!("https://cdn.discordapp.com/emojis/{}.{}",props.inner.id, if props.inner.animated {"gif"} else {"png"})} />
         </div>
     }
 }
