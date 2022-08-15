@@ -1,6 +1,5 @@
-use yew::prelude::*;
 use material_yew::{MatIconButton, MatSnackbar};
-
+use yew::prelude::*;
 
 #[derive(Clone, Debug)]
 pub enum CloneError<T> {
@@ -84,21 +83,38 @@ gen_error_name!(
     ApiGetOverlappingGuildsError
 );
 
-
-
 #[derive(Debug, Clone, PartialEq, Properties)]
 pub struct ErrorComponentProps {
     pub name: String,
     pub description: String,
 }
 
-#[function_component(ErrorComponent)]
-pub fn error_component(ErrorComponentProps { name, description }: &ErrorComponentProps) -> Html {
-    html! {
-        <MatSnackbar label_text={format!("{} Error: {}", name, description)}>
-            <span class="snackbar-dismiss-slot" slot="dismiss">
-                <MatIconButton icon="close" />
-            </span>
-        </MatSnackbar>
+pub struct ErrorComponent {
+    link: material_yew::WeakComponentLink<MatSnackbar>,
+}
+
+impl Component for ErrorComponent {
+    type Message = ();
+    type Properties = ErrorComponentProps;
+
+    fn create(_: &Context<Self>) -> Self {
+        ErrorComponent {
+            link: Default::default(),
+        }
+    }
+
+    fn view(&self, ctx: &Context<Self>) -> Html {
+        let ErrorComponentProps { name, description } = ctx.props();
+        html! {
+            <MatSnackbar label_text={format!("{} Error: {}", name, description)} snackbar_link={ self.link.clone() }>
+                <span class="snackbar-dismiss-slot" slot="dismiss">
+                    <MatIconButton icon="close" />
+                </span>
+            </MatSnackbar>
+        }
+    }
+
+    fn rendered(&mut self, _: &Context<Self>, _: bool) {
+        self.link.show();
     }
 }

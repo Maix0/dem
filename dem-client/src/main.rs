@@ -16,9 +16,9 @@ use yew_hooks::prelude::*;
 use yew_router::prelude::*;
 
 mod drawer_content;
+mod emoji_list;
 mod error;
 mod style;
-mod emoji_list;
 
 use error::CloneError;
 
@@ -92,53 +92,57 @@ fn app() -> Html {
         <ContextProvider<APIConfig> context={(*config).clone()}>
             <HashRouter>
                 <MatDrawer open={*drawer} drawer_type="dismissible">
-                {
-                    if let Some(guilds) = &guilds.data {
-                        html! {<drawer_content::DrawerContent onclick={onclick.clone()} guilds={guilds.clone()} />}   
-                    } else if let Some(error) = &guilds.error {
-                        html!{<error::ErrorComponent name={error.catergory()} description={error.detail()} />}
-                    } else {
-                        html!{}
+                    <div class="drawer-content">{
+                        if let Some(guilds) = &guilds.data {
+                            html! {<drawer_content::DrawerContent onclick={onclick.clone()} guilds={guilds.clone()} />}
+                        } else if let Some(error) = &guilds.error {
+                            html!{<error::ErrorComponent name={error.catergory()} description={error.detail()} />}
+                        } else {
+                            html!{}
+                        }
                     }
-                }
-                </MatDrawer>
-                <MatTopAppBarFixed onnavigationiconclick={toggle_drawer}>
-                    <MatTopAppBarNavigationIcon>
-                        <MatIconButton icon="menu"></MatIconButton>
-                    </MatTopAppBarNavigationIcon>
-                
+                    </div>
+                    <div slot="appContent">
+                        <MatTopAppBarFixed onnavigationiconclick={toggle_drawer}>
+                            <MatTopAppBarNavigationIcon>
+                                <MatIconButton icon="menu"></MatIconButton>
+                            </MatTopAppBarNavigationIcon>
 
-                    <MatTopAppBarTitle>
-                        {"Discord Emojis Manager"}
-                    </MatTopAppBarTitle>
-                    <MatTopAppBarActionItems>
+
+                            <MatTopAppBarTitle>
+                                {"Discord Emojis Manager"}
+                            </MatTopAppBarTitle>
+                            <MatTopAppBarActionItems>
+                                {
+                                    if let Some(dem_http::models::OkResponseForNullableUserLogin {ok: Some(user)}) = &user_login.data {
+                                        html! {
+                                            <div> {format!("Logged in as {}", user.username)} </div>
+                                        }
+                                    } else if let Some(error) = &user_login.error {
+                                        html!{<error::ErrorComponent name={error.catergory()} description={error.detail()} />}
+                                    } else {
+                                        html! {
+                                            <a href="/api/auth">
+                                                <MatButton label="Login" icon={yew::virtual_dom::AttrValue::from("login")} unelevated=true trailing_icon=true/>
+                                            </a>
+                                        }
+                                    }
+                                }
+                            </MatTopAppBarActionItems>
+
+                        </MatTopAppBarFixed>
+                        <error::ErrorComponent name={"Dev Error".to_string()} description={"Test to see if it works".to_string()} />
                         {
-                            if let Some(dem_http::models::OkResponseForNullableUserLogin {ok: Some(user)}) = &user_login.data {
-                                html! {
-                                    <div> {format!("Logged in as {}", user.username)} </div>
-                                }
-                            } else if let Some(error) = &user_login.error {
-                                html!{<error::ErrorComponent name={error.catergory()} description={error.detail()} />}
-                            } else {
-                                html! {
-                                    <a href="/api/auth">
-                                        <MatButton label="Login" icon={yew::virtual_dom::AttrValue::from("login")} unelevated=true trailing_icon=true/>
-                                    </a>
-                                }
+                            if let Some(guilds) = guilds.data.clone() {
+                                html! {<Switch<Routes> render={Callback::<Routes, Html>::from(move |r| switch(&guilds, r))} />}
+                            } else if let Some(error) = guilds.error.clone() {
+                                html! {<error::ErrorComponent name={error.catergory()} description={error.detail()} />}
+                            }else {
+                                html!{"Loading..."}
                             }
                         }
-                    </MatTopAppBarActionItems>
-
-                </MatTopAppBarFixed>
-                {
-                    if let Some(guilds) = guilds.data.clone() {
-                        html! {<Switch<Routes> render={Callback::<Routes, Html>::from(move |r| switch(&guilds, r))} />}
-                    } else if let Some(error) = guilds.error.clone() {
-                        html! {<error::ErrorComponent name={error.catergory()} description={error.detail()} />}
-                    }else {
-                        html!{"Loading..."}
-                    }
-                }
+                    </div>
+                </MatDrawer>
             </HashRouter>
         </ContextProvider<APIConfig>>
     </>
@@ -174,7 +178,6 @@ fn switch(
         }
     }
 }
-
 
 fn main() {
     yew::Renderer::<App>::new().render();
