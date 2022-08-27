@@ -7,7 +7,7 @@ use crate::{AppLink, Routes};
 #[derive(Debug, Properties, PartialEq)]
 pub struct DrawerContentProps {
     pub onclick: Callback<()>,
-    pub guilds: dem_http::models::OkResponseForArrayOfPartialGuildWithPermission,
+    pub guilds: Vec<dem_http::models::PartialGuildWithPermission>,
 }
 
 #[function_component(DrawerContent)]
@@ -19,7 +19,7 @@ pub fn drawer_content(DrawerContentProps { onclick, guilds }: &DrawerContentProp
             </div>
 
             {
-                    guilds.ok.iter().map(|g|
+                    guilds.iter().map(|g|
                         html!{<GuildListItem guild={g.clone()} onclick={onclick.clone()}/>}
                     ).collect::<Html>()
             }

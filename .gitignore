@@ -8,3 +8,4 @@ node_modules
 .direnv
 *.lock
 dem-http
+image_store

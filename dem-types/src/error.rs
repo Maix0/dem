@@ -115,6 +115,10 @@ define_error! {
         Unauthorized = {
             description: "not authorized",
             code: 2,
+        },
+        InvalidRequest = {
+            description: "invalid request",
+            code: 3,
         }
     }
 }

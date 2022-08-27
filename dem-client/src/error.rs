@@ -19,13 +19,6 @@ impl<T: Clone> std::convert::From<dem_http::apis::Error<T>> for CloneError<T> {
         }
     }
 }
-impl<T: Clone> CloneError<T> {
-    pub fn from_error(err: dem_http::apis::Error<T>) -> Self {
-        err.into()
-    }
-}
-
-impl<T> CloneError<T> {}
 
 macro_rules! gen_error_name {
     ($($err:tt),*) => {
@@ -48,6 +41,9 @@ macro_rules! gen_error_name {
                                 }
                                 dem_http::models::error::Error::Unauthorized => {
                                     "Unauthorize"
+                                }
+                                dem_http::models::error::Error::InvalidRequest => {
+                                    "Invalid Request"
                                 }
                             }
                         } else {
@@ -72,7 +68,52 @@ macro_rules! gen_error_name {
                 }
             }
         }
-        )*
+    impl ::std::fmt::Display for CloneError<$err> {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match self {
+                CloneError::Io(e) | CloneError::Serde(e) | CloneError::Reqwest(e) => ::std::fmt::Display::fmt(&e, f),
+                CloneError::ResponseError(ref r) =>
+                    ::std::fmt::Display::fmt(
+                        if let Some($err::Status400(err_response)) = &r.entity {
+                            err_response.err.description.as_str()
+                        } else {
+                            "No description"
+                        },
+                        f
+                    ),
+            }
+        }
+    }
+    impl PartialEq for CloneError<$err> {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (CloneError::Io(e1), CloneError::Io(e2)) => e1 == e2,
+                (CloneError::Serde(e1), CloneError::Serde(e2)) => e1 == e2,
+                (CloneError::Reqwest(e1), CloneError::Reqwest(e2)) => e1 == e2,
+                (CloneError::ResponseError(e1), CloneError::ResponseError(e2)) => {
+                    e1.status == e2.status
+                        && e1.content == e2.content
+                        && match (&e1.entity, &e2.entity) {
+                            (
+                                &Some($err::Status400(ref e1)),
+                                &Some($err::Status400(ref e2)),
+                            ) => e1 == e2,
+                            (
+                                &Some($err::UnknownValue(ref e1)),
+                                &Some($err::UnknownValue(ref e2)),
+                            ) => e1 == e2,
+                            _ => false,
+                        }
+                }
+                _ => false,
+            }
+        }
+    }
+
+    impl std::error::Error for CloneError<$err> {}
+    )*
+
+
     };
 }
 use dem_http::apis::default_api::*;
@@ -80,7 +121,9 @@ gen_error_name!(
     ApiGetCurrentUserError,
     ApiGetGuildEmojisError,
     ApiGetGuildStickersError,
-    ApiGetOverlappingGuildsError
+    ApiGetOverlappingGuildsError,
+    ImageUploadEmojiToStoreError,
+    ImageImageListError
 );
 
 #[derive(Debug, Clone, PartialEq, Properties)]

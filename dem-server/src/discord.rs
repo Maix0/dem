@@ -5,6 +5,7 @@ use rocket::figment::Figment;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+const GOOGLE_SAFESAERCH_URL: &str = "https://vision.googleapis.com/v1/images:annotate";
 const DISCORD_API: &str = "https://discord.com/api/v10";
 const DISCORD_WS: &str = "wss://gateway.discord.gg/?v=10&encoding=json";
 const INTENTS: u64 = (1 << 0) | (1 << 3);
@@ -17,18 +18,26 @@ pub fn get_token() -> &'static str {
 
 pub struct Logic {
     discord_token: String,
-    pub guilds: &'static dashmap::DashMap<u64, types::PartialGuild>,
+    google_token: String,
+    #[cfg(feature = "google_api_remote")]
+    external_url: String,
+    #[cfg(not(feature = "google_api_remote"))]
+    tmp_dir: String,
+    pub guilds: &'static dashmap::DashMap<u64, types::PartialGuild, fxhash::FxBuildHasher>,
     pub user_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<String, LoggedUser>>>,
-    pub user_id_to_token: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String>>>,
+    pub user_id_to_token:
+        std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String, fxhash::FxBuildHasher>>>,
     client: reqwest_middleware::ClientWithMiddleware,
 }
 
 impl Logic {
     async fn handle_gateway(
         token: String,
-        guilds: &'static dashmap::DashMap<u64, types::PartialGuild>,
+        guilds: &'static dashmap::DashMap<u64, types::PartialGuild, fxhash::FxBuildHasher>,
         user_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<String, LoggedUser>>>,
-        user_id_to_token: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String>>>,
+        user_id_to_token: std::sync::Arc<
+            tokio::sync::RwLock<lru::LruCache<u64, String, fxhash::FxBuildHasher>>,
+        >,
     ) {
         use futures_util::{sink::SinkExt, stream::StreamExt};
         use rand::{Rng, SeedableRng};
@@ -262,7 +271,9 @@ impl Logic {
     pub async fn clear_logged_user_bg_task(
         timeout_ms: u64,
         cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<String, LoggedUser>>>,
-        cache_id: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<u64, String>>>,
+        cache_id: std::sync::Arc<
+            tokio::sync::RwLock<lru::LruCache<u64, String, fxhash::FxBuildHasher>>,
+        >,
     ) {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(timeout_ms));
         loop {
@@ -286,18 +297,24 @@ impl Logic {
             discord_token: String,
             logged_user_cache: usize,
             logged_user_purge_time: u64,
+            google_token: String,
+            #[cfg(feature = "google_api_remote")]
+            external_url: String,
         }
         let config = figment.extract_inner::<Config>("dem")?;
         unsafe {
             BOT_AUTH_HEADER = Box::leak(format!("BOT {}", config.discord_token).into_boxed_str());
         }
-        let guilds = Box::leak(Box::new(dashmap::DashMap::with_capacity(1024)));
+        let guilds = Box::leak(Box::new(dashmap::DashMap::with_capacity_and_hasher(
+            1024,
+            fxhash::FxBuildHasher::default(),
+        )));
         let user_cache = std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
             config.logged_user_cache,
         )));
-        let user_id_to_token = std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
-            config.logged_user_cache,
-        )));
+        let user_id_to_token = std::sync::Arc::new(tokio::sync::RwLock::new(
+            lru::LruCache::with_hasher(config.logged_user_cache, fxhash::FxBuildHasher::default()),
+        ));
 
         tokio::spawn(Self::handle_gateway(
             config.discord_token.clone(),
@@ -311,9 +328,14 @@ impl Logic {
             user_id_to_token.clone(),
         ));
         Ok(Self {
+            google_token: config.google_token,
             user_cache,
             user_id_to_token,
             guilds,
+            #[cfg(not(feature = "google_api_remote"))]
+            tmp_dir: figment.extract_inner("temp_dir").unwrap(),
+            #[cfg(feature = "google_api_remote")]
+            external_url: config.external_url,
             discord_token: config.discord_token,
             client: {
                 let client = reqwest::Client::new();
@@ -327,14 +349,18 @@ impl Logic {
     pub fn get_guild(
         &self,
         guildid: u64,
-    ) -> Option<dashmap::mapref::one::Ref<'_, u64, types::PartialGuild>> {
+    ) -> Option<dashmap::mapref::one::Ref<'_, u64, types::PartialGuild, fxhash::FxBuildHasher>>
+    {
         self.guilds.get(&guildid)
     }
 
     pub async fn get_guilds_of_client_with_permission(
         &self,
         user_token: &str,
-    ) -> Result<std::collections::HashMap<u64, u64>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<
+        std::collections::HashMap<u64, u64, fxhash::FxBuildHasher>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         #[derive(serde::Deserialize)]
         struct PartialGuildFromUser {
             #[serde(deserialize_with = "deserialize_str")]
@@ -351,7 +377,10 @@ impl Logic {
             .await?
             .json()
             .await?;
-        let mut out = std::collections::HashMap::with_capacity(response.len());
+        let mut out = std::collections::HashMap::with_capacity_and_hasher(
+            response.len(),
+            fxhash::FxBuildHasher::default(),
+        );
         out.extend(
             response
                 .into_iter()
@@ -371,6 +400,86 @@ impl Logic {
             .await?
             .json()
             .await
+            .map_err(Into::into)
+    }
+
+    #[cfg(feature = "google_api_remote")]
+    pub async fn get_image_rating(
+        &self,
+        img: &str,
+    ) -> Result<crate::image::ImageRating, Box<dyn std::error::Error + Send + Sync>> {
+        #[derive(Deserialize)]
+        struct Response {
+            response: crate::image::ImageRating,
+        }
+        self.client
+            .post(GOOGLE_SAFESAERCH_URL)
+            .bearer_auth(&self.google_token)
+            .json(&json! {
+                {
+                  "requests": [
+                    {
+                      "image": {
+                        "source": {
+                          "imageUri": format!("{}/tmp/{img}", self.external_url)
+                        }
+                      },
+                      "features": [
+                        {
+                          "type": "SAFE_SEARCH_DETECTION"
+                        }
+                      ]
+                    }
+                  ]
+                }
+            })
+            .send()
+            .await?
+            .json::<Response>()
+            .await
+            .map(|v| v.response)
+            .map_err(Into::into)
+    }
+
+    #[cfg(not(feature = "google_api_remote"))]
+    pub async fn get_image_rating(
+        &self,
+        img: &str,
+    ) -> Result<crate::image::ImageRating, Box<dyn std::error::Error + Send + Sync>> {
+        let encoded = base64::encode(
+            tokio::fs::read(format!("{}/{img}", self.tmp_dir))
+                .await
+                .unwrap(),
+        );
+
+        #[derive(Deserialize)]
+        struct Response {
+            response: crate::image::ImageRating,
+        }
+        self.client
+            .post(GOOGLE_SAFESAERCH_URL)
+            .bearer_auth(&self.google_token)
+            .json(&json! {
+                {
+                  "requests": [
+                    {
+                      "image": {
+                        "content": encoded,
+                      },
+                      "features": [
+                        {
+                          "type": "SAFE_SEARCH_DETECTION"
+                        }
+                      ]
+                    }
+                  ]
+                }
+            })
+            .send()
+            .await?
+            .json::<Response>()
+            .await
+            .map(|v| v.response)
             .map_err(Into::into)
     }
 }
@@ -399,5 +508,5 @@ pub struct LoggedUser {
     pub user_icon: Option<String>,
     pub username: String,
     pub discriminator: String,
-    pub guilds: HashMap<u64, u64>,
+    pub guilds: HashMap<u64, u64, fxhash::FxBuildHasher>,
 }

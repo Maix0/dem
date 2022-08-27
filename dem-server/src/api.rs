@@ -1,4 +1,4 @@
-use crate::{discord::Logic, Error, Rsp};
+use crate::{Error, Rsp};
 use std::collections::HashMap;
 
 #[openapi]
@@ -7,7 +7,7 @@ pub async fn get_overlapping_guilds(
     user: crate::auth::User,
     logic: &rocket::State<crate::discord::Logic>,
 ) -> Rsp<Vec<dem_types::discord::PartialGuildWithPermission>> {
-    let user_guilds: HashMap<u64, u64> = match logic
+    let user_guilds: HashMap<u64, u64, _> = match logic
         .get_guilds_of_client_with_permission(&user.token)
         .await
     {
@@ -69,14 +69,12 @@ pub async fn get_guild_emojis(
 ) -> Rsp<Vec<dem_types::discord::EmojiItem>> {
     if let Some(u) = logic.user_cache.write().await.get(&user.token) {
         if u.guilds.contains_key(&id) {
-            Rsp::ok(
-                match logic.get_guild(id).map(|kv| (*kv).emojis.clone()) {
-                    Some(o) => o,
-                    None => {
-                        return Rsp::err(Error::Internal, None);
-                    }
-                },
-            )
+            Rsp::ok(match logic.get_guild(id).map(|kv| (*kv).emojis.clone()) {
+                Some(o) => o,
+                None => {
+                    return Rsp::err(Error::Internal, None);
+                }
+            })
         } else {
             Rsp::err(Error::Unauthorized, "Not in the guild".to_string().into())
         }
@@ -84,7 +82,6 @@ pub async fn get_guild_emojis(
         Rsp::err(Error::Unauthorized, None)
     }
 }
-
 
 #[openapi]
 #[get("/guild/<id>/stickers")]
@@ -95,14 +92,12 @@ pub async fn get_guild_stickers(
 ) -> Rsp<Vec<dem_types::discord::StickerItem>> {
     if let Some(u) = logic.user_cache.write().await.get(&user.token) {
         if u.guilds.contains_key(&id) {
-            Rsp::ok(
-                match logic.get_guild(id).map(|kv| (*kv).stickers.clone()) {
-                    Some(o) => o,
-                    None => {
-                        return Rsp::err(Error::Internal, None);
-                    }
-                },
-            )
+            Rsp::ok(match logic.get_guild(id).map(|kv| (*kv).stickers.clone()) {
+                Some(o) => o,
+                None => {
+                    return Rsp::err(Error::Internal, None);
+                }
+            })
         } else {
             Rsp::err(Error::Unauthorized, "Not in the guild".to_string().into())
         }
